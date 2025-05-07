@@ -6,14 +6,19 @@
 # include <sstream>
 # include <algorithm>
 # include <cassert>
+
 class Instruction{
 private:
     std::string opcode;
     std::string r1, r2, r3;
     std::string offset;
     size_t instruction_count;
+    size_t start;
+    size_t end;
+    size_t duration;
+    size_t stalls;
 public:
-    Instruction(std::string instruction, size_t instruction_count): instruction_count(instruction_count){
+    Instruction(std::string instruction, size_t instruction_count): instruction_count(instruction_count),duration(0), stalls(0){
         std::istringstream iss(instruction);
             std::string word;
 
@@ -50,6 +55,31 @@ public:
                 }
             }
     }
+    
+    void setStart(size_t start){
+        this->start = start;
+    }
+    void setEnd(size_t end){
+        this->end = end;
+    }
+    void stall(){
+        ++ this->stalls;
+    }
+    size_t getStalls(){
+        return this->stalls;
+    }
+    size_t getStart(){
+        return this->start;
+    }
+    size_t getEnd(){
+        return this->end;
+    }
+    size_t getDuration(){
+        return this->duration;
+    }
+    float getStallRate(){
+        return this->stalls / this->duration;
+    }
     void print(){
         std::cout << "Instruction "<< this->instruction_count << ": " << std::endl;
         std::cout << "Opcode: " << opcode << std::endl;        
@@ -66,6 +96,15 @@ public:
             std::cout << "src1: " << r2 << std::endl;
             std::cout << "Dest: " << r1 << std::endl;
         }
+    }
+    void print_summary(){
+        print();
+        std::cout << "Start: " << start << std::endl;
+        std::cout << "End: " << end << std::endl;
+        std::cout << "Duration: " << duration << std::endl;
+        std::cout << "Stalls: " << stalls << std::endl;
+        std::cout << "Stall rate: " << getStallRate() << std::endl;
+        std::cout << "------------------------" << std::endl;
     }
       
 };
