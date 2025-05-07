@@ -73,27 +73,27 @@ public:
 
 class Register{
     private:
-        unsigned int value;
+        size_t value;
         bool valid_bit;
-        unsigned int tag;
+        size_t tag;
     public:
         Register(bool valid = 1) : value(0), valid_bit(valid), tag(-1) {}
         bool isValid(){
             return valid_bit;
         }
-        unsigned int getValue(){
+        size_t getValue(){
             return value;
         }
-        unsigned int getTag(){
+        size_t getTag(){
             return tag;
         }
-        void setValue(unsigned int value){
+        void setValue(size_t value){
             this->value = value;
         }
         void setValidBit(bool valid_bit){
             this->valid_bit = valid_bit;
         }
-        void setTag(unsigned int tag){
+        void setTag(size_t tag){
             this->tag = tag;
         }
     
@@ -150,10 +150,10 @@ class Reservation_station{
         bool isFull(){
             return occupancy == capacity;
         }
-        Register getSrc1(unsigned int tag){
+        Register getSrc1(size_t tag){
             return src1[tag];
         }
-        Register getSrc2(unsigned int tag){
+        Register getSrc2(size_t tag){
             return src2[tag];
         }
         
@@ -170,7 +170,7 @@ private:
     Reservation_station reservation_station;
 
 public:
-    Alu(size_t latency, size_t capacity):latency(latency), capacity(capacity), pipeline(latency,0), reservation_station(capacity){
+    Alu(size_t latency, size_t capacity, Reservation_station Reservation_station):latency(latency), capacity(capacity), pipeline(latency,0), reservation_station(reservation_station){
 
     }
 
@@ -219,27 +219,49 @@ public:
 class Tomasulo_simulator{
 private:
     std::queue<Instruction> instructions;
+    Alu alu1;
+    Alu alu2;
     size_t num_instructions;
     Register_file register_file;
-    //Alu alu1;
-    //Alu alu2;
-    //Multiplier_Divider multiplier_divider;
-    //Memory memory;
-    unsigned int cycle;
-    unsigned int add_sub_time;
-    unsigned int mul_time;
-    unsigned int div_time;
-    unsigned int load_store_time;
-
+    
+    Multiplier_Divider multiplier_divider;
+    Memory memory;
+    size_t cycle;
+    size_t add_sub_time;
+    size_t mul_time;
+    size_t div_time;
+    size_t load_store_time;
+    size_t add_sub_capacity;
+    size_t mul_capacity;
+    size_t div_capacity;
+    size_t load_store_capacity;
+    
 
 public:
-    Tomasulo_simulator(std::string code): num_instructions(0), cycle(0), add_sub_time(2), mul_time(10), div_time(20), load_store_time(5){
+    Tomasulo_simulator(std::string code): alu1(0, 0, Reservation_station(0)), alu2(0, 0, Reservation_station(0)), multiplier_divider(0, 0), memory(0, 0){
+        this->num_instructions = 0;
+        this->cycle = 0;
+        this->add_sub_time = 2;
+        this->mul_time = 10;
+        this->div_time = 20;
+        this->load_store_time = 5;
+        this->add_sub_capacity = 3;
+        this->mul_capacity = 2;
+        this->div_capacity = 2;
+        this->load_store_capacity = 4;
+        this->register_file = Register_file();
+        Reservation_station alu_shared_rs (add_sub_capacity);
+        this->alu1 = Alu(add_sub_time, add_sub_capacity, alu_shared_rs);
+        this->alu2 = Alu(mul_time, mul_capacity, alu_shared_rs);
+        this->multiplier_divider = Multiplier_Divider(mul_time, mul_capacity);
+        this->memory = Memory(load_store_time, load_store_capacity);
+
+        
         std::ifstream file(code);
         std::string line;
         if (file.is_open()) {
             while (std::getline(file, line)) {
-                this->instructions.push(Instruction(line, this->num_instructions));
-                ++ this->num_instructions;
+                this->instructions.push(Instruction(line, this->num_instructions ++));
             }
             file.close();
         }else {
