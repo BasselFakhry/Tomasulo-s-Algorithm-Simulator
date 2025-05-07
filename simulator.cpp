@@ -5,134 +5,7 @@
 # include <fstream>
 # include <sstream>
 # include <algorithm>
-#include <cassert>
-
-class Alu{
-private:
-    size_t stages;
-    size_t latency;
-    std::vector<Instruction> pipeline;
-    Reservation_station reservation_station;
-public:
-
-    
-
-};
-
-class Multiplier_Divider{
-private:
-    size_t stages;
-    size_t latency;    
-    std::vector<Instruction> pipeline;
-    Reservation_station reservation_station;
-public:
-
-    
-
-};
-
-class Memory{
-private:
-    size_t stages;
-    size_t latency;
-    std::vector<Instruction> pipeline;
-    Reservation_station reservation_station;
-public:
-
-   
-};
-
-
-
-
-class Register{
-private:
-    unsigned int value;
-    bool valid_bit;
-    unsigned int tag;
-public:
-    Register(bool valid = 1) : value(0), valid_bit(valid), tag(-1) {}
-    bool isValid(){
-        return valid_bit;
-    }
-    unsigned int getValue(){
-        return value;
-    }
-    unsigned int getTag(){
-        return tag;
-    }
-    void setValue(unsigned int value){
-        this->value = value;
-    }
-    void setValidBit(bool valid_bit){
-        this->valid_bit = valid_bit;
-    }
-    void setTag(unsigned int tag){
-        this->tag = tag;
-    }
-
-    void print(){
-        std::cout << "Value: " << value << std::endl;
-        std::cout << "Valid Bit: " << valid_bit << std::endl;
-        std::cout << "Tag: " << tag << std::endl;
-    }
-};
-
-class Reservation_station{
-private:
-    size_t capacity;
-    size_t occupancy;
-    bool busy;
-    std::vector<Register> src1;
-    std::vector<Register> src2;
-    
-public:
-    Reservation_station(size_t capacity): capacity(capacity), occupancy(0), busy(false){
-        src1.resize(capacity);
-        src2.resize(capacity);        
-    }
-    size_t addInstruction(Register src1, Register src2){
-        assert(!isFull());
-        for(size_t i = 0; i < capacity; ++i){
-            if(!this->src1[i].isValid()){
-                this->src1[i] = src1;
-                this->src2[i] = src2;
-                if(++this->occupancy == capacity){
-                    this->busy = true;
-                }
-                return i;
-            }
-        }
-    }
-    bool isFull(){
-        return occupancy == capacity;
-    }
-    Register getSrc1(unsigned int tag){
-        return src1[tag];
-    }
-    Register getSrc2(unsigned int tag){
-        return src2[tag];
-    }
-    
-};
-
-class Register_file{
-private:
-    Register registers[8];
-public:
-    Register_file(){
-        for (int i = 0; i < 8; ++i) {
-            registers[i] = Register();
-        }
-    }
-
-
-
-        
-    
-};
-
-
+# include <cassert>
 class Instruction{
 private:
     std::string opcode;
@@ -194,18 +67,164 @@ public:
             std::cout << "Dest: " << r1 << std::endl;
         }
     }
-  
+      
 };
+    
+
+class Register{
+    private:
+        unsigned int value;
+        bool valid_bit;
+        unsigned int tag;
+    public:
+        Register(bool valid = 1) : value(0), valid_bit(valid), tag(-1) {}
+        bool isValid(){
+            return valid_bit;
+        }
+        unsigned int getValue(){
+            return value;
+        }
+        unsigned int getTag(){
+            return tag;
+        }
+        void setValue(unsigned int value){
+            this->value = value;
+        }
+        void setValidBit(bool valid_bit){
+            this->valid_bit = valid_bit;
+        }
+        void setTag(unsigned int tag){
+            this->tag = tag;
+        }
+    
+        void print(){
+            std::cout << "Value: " << value << std::endl;
+            std::cout << "Valid Bit: " << valid_bit << std::endl;
+            std::cout << "Tag: " << tag << std::endl;
+        }
+};
+
+class Register_file{
+    private:
+        Register registers[8];
+    public:
+        Register_file(){
+            for (int i = 0; i < 8; ++i) {
+                registers[i] = Register();
+            }
+        }
+          
+        
+};
+
+
+class Reservation_station{
+    private:
+        size_t capacity;
+        size_t occupancy;
+        bool busy;
+        std::vector<Register> src1;
+        std::vector<Register> src2;
+        
+    public:
+        Reservation_station(size_t capacity): capacity(capacity), occupancy(0), busy(false), src1(capacity), src2(capacity){
+            for(size_t i = 0; i < capacity; ++i){
+                this->src1[i] = Register(0);
+                this->src2[i] = Register(0);
+            }
+                   
+        }
+        size_t addInstruction(Register src1, Register src2){
+            assert(!isFull());
+            for(size_t i = 0; i < capacity; ++i){
+                if(!this->src1[i].isValid()){
+                    this->src1[i] = src1;
+                    this->src2[i] = src2;
+                    if(++this->occupancy == capacity){
+                        this->busy = true;
+                    }
+                    return i;
+                }
+            }
+        }
+        bool isFull(){
+            return occupancy == capacity;
+        }
+        Register getSrc1(unsigned int tag){
+            return src1[tag];
+        }
+        Register getSrc2(unsigned int tag){
+            return src2[tag];
+        }
+        
+};
+    
+
+
+
+class Alu{
+private:
+    size_t latency;
+    size_t capacity;
+    std::vector<size_t> pipeline;
+    Reservation_station reservation_station;
+
+public:
+    Alu(size_t latency, size_t capacity):latency(latency), capacity(capacity), pipeline(latency,0), reservation_station(capacity){
+
+    }
+
+    
+
+};
+
+class Multiplier_Divider{
+private:
+    size_t latency;
+    size_t capacity;
+    std::vector<size_t> pipeline;
+    Reservation_station reservation_station;
+public:
+    Multiplier_Divider(size_t latency, size_t capacity):latency(latency), pipeline(latency,0), capacity(capacity), reservation_station(capacity){
+
+    }
+
+    
+
+};
+
+class Memory{
+private:
+    size_t latency;
+    size_t capacity;
+    std::vector<size_t> pipeline;
+    Reservation_station reservation_station;
+public:
+    Memory(size_t latency, size_t capacity):latency(latency), capacity(capacity), pipeline(latency,0), reservation_station(capacity){
+        
+    }
+   
+};
+
+
+
+
+
+
+
+
+
+
 
 class Tomasulo_simulator{
 private:
     std::queue<Instruction> instructions;
     size_t num_instructions;
     Register_file register_file;
-    Alu alu1;
-    Alu alu2;
-    Multiplier_Divider multiplier_divider;
-    Memory memory;
+    //Alu alu1;
+    //Alu alu2;
+    //Multiplier_Divider multiplier_divider;
+    //Memory memory;
     unsigned int cycle;
     unsigned int add_sub_time;
     unsigned int mul_time;
