@@ -12,7 +12,7 @@ private:
     size_t stages;
     size_t latency;
     std::vector<Instruction> pipeline;
-
+    Reservation_station reservation_station;
 public:
 
     
@@ -24,7 +24,7 @@ private:
     size_t stages;
     size_t latency;    
     std::vector<Instruction> pipeline;
-
+    Reservation_station reservation_station;
 public:
 
     
@@ -36,7 +36,7 @@ private:
     size_t stages;
     size_t latency;
     std::vector<Instruction> pipeline;
-
+    Reservation_station reservation_station;
 public:
 
    
