@@ -97,7 +97,9 @@ public:
             if(!this->src1[i].isValid()){
                 this->src1[i] = src1;
                 this->src2[i] = src2;
-                ++this->occupancy;
+                if(++this->occupancy == capacity){
+                    this->busy = true;
+                }
                 return i;
             }
         }
