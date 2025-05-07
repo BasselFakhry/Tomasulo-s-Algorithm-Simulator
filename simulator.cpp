@@ -6,7 +6,6 @@
 # include <sstream>
 # include <algorithm>
 # include <cassert>
-
 class Instruction{
 private:
     std::string opcode;
@@ -147,6 +146,7 @@ class Register_file{
     private:
         Register registers[8];
     public:
+
         Register_file(){
             for (int i = 0; i < 8; ++i) {
                 registers[i] = Register();
@@ -317,6 +317,14 @@ public:
             instructions_copy.pop();
 
         }
+    }
+
+    void print_report(){
+        std::cout << "Report: "<< std::endl;
+        std::cout << "Num of instructions " << this->num_instructions << std::endl;
+        std::cout << "Total execution time = " << this-> cycle <<" clock cycles." << std::endl;
+        std::cout << "Average number of instructions per cycle = " << this->cycle / this->num_instructions << " (IPC)." << std::endl;
+        
     }
 };
 
