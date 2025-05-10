@@ -363,6 +363,7 @@ public:
             //size_t mem_out = this->memory.next_cycle();
 
             for(size_t i = 0; i < this->num_instructions; ++i){
+
                 if(this->instructions[i].isDone()){
                     continue;
                 }else if(this->instructions[i].hasStarted()){
@@ -375,6 +376,8 @@ public:
                                 this->instructions[i].stall();
                                 break;
                             }else{
+                                this->instructions[i].setState("Reservation_Ex");
+
 
                                 if(i < this->num_instructions - 1){
                                     this->instructions[i+1].setStart(this->cycle);
@@ -389,7 +392,7 @@ public:
                                 this->instructions[i].stall();
                                 break;
                             }else{
-
+                                
                                 if(i < this->num_instructions - 1){
                                     this->instructions[i+1].setStart(this->cycle);
                                     this->instructions[i+1].setState("Issue");
@@ -473,8 +476,7 @@ public:
 
 
     void print(){
-        std::cout << "Num of instructions " << this->num_instructions << std::endl;
-        
+        std::cout << "Num of instructions " << this->num_instructions << std::endl;        
         
         for(size_t i = 0; i < this->num_instructions; ++i){
             this->instructions[i].print();
