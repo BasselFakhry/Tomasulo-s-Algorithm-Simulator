@@ -57,7 +57,12 @@ public:
                 }
             }
     }
-    
+    bool isDone(){
+        return this->current_state == "Done";
+    }
+    bool hasStarted(){
+        return this->current_state != "Out";
+    }
     void setStart(size_t start){
         this->start = start;
     }
@@ -66,6 +71,12 @@ public:
     }
     void stall(){
         ++ this->stalls;
+    }
+    void incrementDuration(){
+        ++ this->duration;
+    }
+    void setState(std::string state){
+        this->current_state = state;
     }
     size_t getStalls(){
         return this->stalls;
@@ -78,6 +89,9 @@ public:
     }
     size_t getDuration(){
         return this->duration;
+    }
+    std::string getOpcode(){
+        return this->opcode;
     }
     float getStallRate(){
         return this->stalls / this->duration;
@@ -212,6 +226,17 @@ public:
     Alu(size_t latency, size_t capacity, Reservation_station reservation_station):latency(latency), capacity(capacity), pipeline(latency,0), reservation_station(reservation_station){
 
     }
+    size_t next_cycle(){
+        size_t out = this->pipeline[this->latency - 1];
+        for(size_t i = this-> latency - 1; i >= 1; --i){
+            this->pipeline[i] = this->pipeline[i - 1];
+        }
+        this->pipeline[0] = 0;
+        return out;
+    }
+    bool isFull(){
+        return this->reservation_station.isFull();
+    }
 
     
 
@@ -228,6 +253,17 @@ public:
 
     }
 
+    size_t next_cycle(){
+        size_t out = this->pipeline[this->latency - 1];
+        for(size_t i = this-> latency - 1; i >= 1; --i){
+            this->pipeline[i] = this->pipeline[i - 1];
+        }
+        this->pipeline[0] = 0;
+        return out;
+    }
+    bool isFull(){
+        return this->reservation_station.isFull();
+    }
     
 
 };
@@ -242,7 +278,9 @@ public:
     Memory(size_t latency, size_t capacity):latency(latency), capacity(capacity), pipeline(latency,0), reservation_station(capacity){
         
     }
-   
+    bool isFull(){
+        return this->reservation_station.isFull();
+    }
 };
 
 
@@ -261,8 +299,7 @@ private:
     Alu alu1;
     Alu alu2;
     size_t num_instructions;
-    Register_file register_file;
-    
+    Register_file register_file;    
     Multiplier_Divider multiplier_divider;
     Memory memory;
     size_t cycle;
@@ -274,10 +311,13 @@ private:
     size_t mul_capacity;
     size_t div_capacity;
     size_t load_store_capacity;
+    size_t remaining_instructions;
+    std::queue<size_t> common_data_bus;
+    size_t issue;
     
 
 public:
-    Tomasulo_simulator(std::string code): alu1(2, 2, Reservation_station(2)), alu2(1, 1, Reservation_station(1)), multiplier_divider(0, 0), memory(0, 0){
+    Tomasulo_simulator(std::string code): alu1(2, 2, Reservation_station(2)), alu2(1, 1, Reservation_station(1)), multiplier_divider(0, 0), memory(0, 0),issue(0){
         this->num_instructions = 0;
         this->cycle = 0;
         this->add_sub_time = 2;
@@ -294,7 +334,7 @@ public:
         this->alu2 = Alu(mul_time, mul_capacity, alu_shared_rs);
         this->multiplier_divider = Multiplier_Divider(mul_time, mul_capacity);
         this->memory = Memory(load_store_time, load_store_capacity);
-
+        this->remaining_instructions = 0;
         
         std::ifstream file(code);
         std::string line;
@@ -305,6 +345,96 @@ public:
             file.close();
         }else {
             std::cerr << "Error opening file!" << std::endl;
+        }
+
+        this->remaining_instructions = this->num_instructions;
+        
+
+        while(this->remaining_instructions){
+            ++this->cycle;
+            for(size_t i = 0; i < this->num_instructions; ++i){
+                if(this->instructions[i].isDone()){
+                    continue;
+                }else if(this->instructions[i].hasStarted()){
+                    this->instructions[i].incrementDuration();
+                    
+                    // check if the instruction in issue stage can proceed to the next stage
+                    if(i == this->issue){
+                        if(this->instructions[i].getOpcode() == "ADD" || this->instructions[i].getOpcode() == "SUB"){
+                            if(this->alu1.isFull()){
+                                this->instructions[i].stall();
+                                break;
+                            }else{
+
+                                if(i < this->num_instructions - 1){
+                                    this->instructions[i+1].setStart(this->cycle);
+                                    this->instructions[i+1].setState("Issue");
+                                    this->issue = i + 1;
+                                    this->instructions[i+1].incrementDuration();
+                                    break;
+                                }
+                            }
+                        }else if(this->instructions[i].getOpcode() == "MUL" || this->instructions[i].getOpcode() == "DIV"){
+                            if(this->multiplier_divider.isFull()){
+                                this->instructions[i].stall();
+                                break;
+                            }else{
+
+                                if(i < this->num_instructions - 1){
+                                    this->instructions[i+1].setStart(this->cycle);
+                                    this->instructions[i+1].setState("Issue");
+                                    this->issue = i + 1;
+                                    this->instructions[i+1].incrementDuration();
+                                    break;
+                                }
+                            }
+                        }else if(this->instructions[i].getOpcode() == "LOAD" || this->instructions[i].getOpcode() == "STORE"){
+                            if(this->memory.isFull()){
+                                this->instructions[i].stall();
+                                break;
+                            }else{
+
+                                if(i < this->num_instructions - 1){
+                                    this->instructions[i+1].setStart(this->cycle);
+                                    this->instructions[i+1].setState("Issue");
+                                    this->issue = i + 1;
+                                    this->instructions[i+1].incrementDuration();
+                                    break;
+                                }
+                            }
+                        }
+                    }else{
+
+                    }
+                }
+            }
+
+
+
+
+            // write back
+            size_t alu1_out = this->alu1.next_cycle();
+            size_t alu2_out = this->alu2.next_cycle();
+            size_t mul_out = this->multiplier_divider.next_cycle();
+            //size_t mem_out = this->memory.next_cycle();
+            if(alu1_out != 0){
+                common_data_bus.push(alu1_out);
+            }
+            if(alu2_out != 0){
+                common_data_bus.push(alu2_out);
+            }
+            if(mul_out != 0){ 
+                common_data_bus.push(mul_out);
+            }
+            if(!common_data_bus.empty()){
+                size_t instruction = common_data_bus.front();
+                common_data_bus.pop();
+                this->instructions[instruction].setEnd(this->cycle);
+                this->instructions[instruction].print_summary();
+                -- this->remaining_instructions;
+            }
+
+
         }
                 
     }
@@ -325,7 +455,6 @@ public:
         std::cout << "Num of instructions " << this->num_instructions << std::endl;
         std::cout << "Total execution time = " << this-> cycle <<" clock cycles." << std::endl;
         std::cout << "Average number of instructions per cycle = " << this->cycle / this->num_instructions << " (IPC)." << std::endl;
-
     }
 };
 
