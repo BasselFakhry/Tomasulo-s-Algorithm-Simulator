@@ -93,6 +93,9 @@ public:
     std::string getOpcode(){
         return this->opcode;
     }
+    std::string getState(){
+        return this->current_state;
+    }
     float getStallRate(){
         return this->stalls / this->duration;
     }
@@ -351,13 +354,20 @@ public:
         
 
         while(this->remaining_instructions){
+
             ++this->cycle;
+
+            size_t alu1_out = this->alu1.next_cycle();
+            size_t alu2_out = this->alu2.next_cycle();
+            size_t mul_out = this->multiplier_divider.next_cycle();
+            //size_t mem_out = this->memory.next_cycle();
+
             for(size_t i = 0; i < this->num_instructions; ++i){
                 if(this->instructions[i].isDone()){
                     continue;
                 }else if(this->instructions[i].hasStarted()){
                     this->instructions[i].incrementDuration();
-                    
+
                     // check if the instruction in issue stage can proceed to the next stage
                     if(i == this->issue){
                         if(this->instructions[i].getOpcode() == "ADD" || this->instructions[i].getOpcode() == "SUB"){
@@ -404,6 +414,32 @@ public:
                             }
                         }
                     }else{
+                        
+                        if(this->instructions[i].getState() == "Reservation_Ex"){
+
+                        }else if(this->instructions[i].getState() == "Execute"){
+                            if(this->instructions[i].getOpcode() == "ADD" || this->instructions[i].getOpcode() == "SUB"){
+                                if(alu1_out == i){
+                                    common_data_bus.push(i);
+                                    this->instructions[i].setState("CDB");
+                                }else if(alu2_out == i){
+                                    common_data_bus.push(i);
+                                    this->instructions[i].setState("CDB");
+                                }else{
+
+                                }
+                            }else if(this->instructions[i].getOpcode() == "MUL" || this->instructions[i].getOpcode() == "DIV"){
+                                if(mul_out == i){
+                                    common_data_bus.push(i);
+                                    this->instructions[i].setState("CDB");
+                                }else{
+                                    
+                                }
+                            }else if(this->instructions[i].getOpcode() == "LOAD" || this->instructions[i].getOpcode() == "STORE"){
+
+                            }
+                            
+                        }
 
                     }
                 }
@@ -412,26 +448,22 @@ public:
 
 
 
-            // write back
-            size_t alu1_out = this->alu1.next_cycle();
-            size_t alu2_out = this->alu2.next_cycle();
-            size_t mul_out = this->multiplier_divider.next_cycle();
-            //size_t mem_out = this->memory.next_cycle();
-            if(alu1_out != 0){
-                common_data_bus.push(alu1_out);
-            }
-            if(alu2_out != 0){
-                common_data_bus.push(alu2_out);
-            }
-            if(mul_out != 0){ 
-                common_data_bus.push(mul_out);
-            }
+            // write back            
             if(!common_data_bus.empty()){
                 size_t instruction = common_data_bus.front();
                 common_data_bus.pop();
+                this->instructions[instruction].setState("Done");
                 this->instructions[instruction].setEnd(this->cycle);
                 this->instructions[instruction].print_summary();
                 -- this->remaining_instructions;
+                if(!common_data_bus.empty()){
+                    std::queue<size_t> temp;
+                    while(!common_data_bus.empty()){
+                        size_t k = common_data_bus.front();
+                        common_data_bus.pop();
+                        this->instructions[k].stall();                        
+                    }
+                }
             }
 
 
