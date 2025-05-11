@@ -247,6 +247,9 @@ class Reservation_station{
                 }
             }
         }
+        bool isbusy(size_t reservation_entry){
+            return this->busy[reservation_entry];
+        }
         bool isFull(){
             return occupancy == capacity;
         }
@@ -256,9 +259,23 @@ class Reservation_station{
         Register getSrc2(size_t tag){
             return src2[tag];
         }
-        /*bool areOperandsReady(size_t instruction_count){
-
-        }*/
+        bool areOperandsReady(size_t instruction_count){
+            size_t tag = Insctuction_res_map[instruction_count];
+            if(this->src1[tag].isValid() && this->src2[tag].isValid()){
+                return true;
+            }else{
+                return false;
+            }
+        }
+        size_t getInstruction(size_t reservation_entry){
+            return this->res_instruction_map[reservation_entry];
+        }
+        void clear(size_t reservation_entry){
+            -- this->occupancy;
+            this->busy[reservation_entry] = false;
+            this->res_instruction_map.erase(reservation_entry);
+            this->Insctuction_res_map.erase(this->res_instruction_map[reservation_entry]);
+        }
 
         
 };
@@ -270,21 +287,22 @@ class Alu{
 private:
     size_t latency;
     size_t capacity;
-    std::vector<size_t> pipeline;
+    std::vector<int> pipeline;
     Reservation_station* reservation_station;
     Reservation_station* reservation_station_mul;
     Reservation_station* reservation_station_mem;
 
 public:
-    Alu(Reservation_station* reservation_station = nullptr, Reservation_station* reservation_station_mul = nullptr, Reservation_station* reservation_station_mem = nullptr, size_t latency = 0, size_t capacity = 0): reservation_station(reservation_station), reservation_station_mul(reservation_station_mul), reservation_station_mem(reservation_station_mem), latency(latency), capacity(capacity), pipeline(latency,0){
+    Alu(Reservation_station* reservation_station = nullptr, Reservation_station* reservation_station_mul = nullptr, Reservation_station* reservation_station_mem = nullptr, size_t latency = 0, size_t capacity = 0): reservation_station(reservation_station), reservation_station_mul(reservation_station_mul), reservation_station_mem(reservation_station_mem), latency(latency), capacity(capacity), pipeline(latency,-1){
 
     }
-    size_t next_cycle(){
+    int next_cycle(int ready = -1){
         size_t out = this->pipeline[this->latency - 1];
         for(size_t i = this-> latency - 1; i >= 1; --i){
             this->pipeline[i] = this->pipeline[i - 1];
         }
-        this->pipeline[0] = 0;
+        this->pipeline[0] = ready;
+               
         return out;
     }
     bool isFull(){
@@ -309,16 +327,17 @@ private:
     Reservation_station* reservation_station_alu;
     Reservation_station* reservation_station_mem;
 public:
-    Multiplier_Divider(Reservation_station* reservation_station = nullptr, Reservation_station* reservation_station_alu = nullptr, Reservation_station* reservation_station_mem = nullptr, size_t latency = 0, size_t capacity = 0):reservation_station(reservation_station), reservation_station_alu(reservation_station_alu), reservation_station_mem(reservation_station_mem), latency(latency), pipeline(latency,0), capacity(capacity){
+    Multiplier_Divider(Reservation_station* reservation_station = nullptr, Reservation_station* reservation_station_alu = nullptr, Reservation_station* reservation_station_mem = nullptr, size_t latency = 0, size_t capacity = 0):reservation_station(reservation_station), reservation_station_alu(reservation_station_alu), reservation_station_mem(reservation_station_mem), latency(latency), pipeline(latency,-1), capacity(capacity){
 
     }
 
-    size_t next_cycle(){
+    int next_cycle(int ready = -1){
         size_t out = this->pipeline[this->latency - 1];
         for(size_t i = this-> latency - 1; i >= 1; --i){
             this->pipeline[i] = this->pipeline[i - 1];
         }
-        this->pipeline[0] = 0;
+        this->pipeline[0] = ready;
+               
         return out;
     }
     bool isFull(){
@@ -426,10 +445,42 @@ public:
         while(this->remaining_instructions){
             break;
             ++this->cycle;
+            std::string state_1 = this->instructions[alu_shared_rs.getInstruction(0)].getState();
+            std::string state_2 = this->instructions[alu_shared_rs.getInstruction(1)].getState();
+            if(!alu_shared_rs.isbusy(0)){
+                state_1 = "NOP";
+            }
+            if(!alu_shared_rs.isbusy(1)){
+                state_2 = "NOP";
+            }
+            int ready_1 = -1;
+            int ready_2 = -1;
+            if(state_1 == "Reservation_ready"){
+                ready_1 = alu_shared_rs.getInstruction(0);
+                instructions[ready_1].setState("Execute");
+                alu_shared_rs.clear(0);
+            }
+            if(state_2 == "Reservation_ready"){
+                ready_2 = alu_shared_rs.getInstruction(1);
+                instructions[ready_2].setState("Execute");
+                alu_shared_rs.clear(1);
+            }
+            int alu1_out = this->alu1.next_cycle(ready_1);
+            int alu2_out = this->alu2.next_cycle(ready_2);
 
-            size_t alu1_out = this->alu1.next_cycle();
-            size_t alu2_out = this->alu2.next_cycle();
-            size_t mul_out = this->multiplier_divider.next_cycle();
+            int ready_mul = -1;
+            for(size_t i = 0; i < this->mul_capacity; ++i){
+                if(mul_shared_rs.isbusy(i)){
+                    int candidate = mul_shared_rs.getInstruction(i);
+                    if(this->instructions[candidate].getState() == "Reservation_ready"){
+                        ready_mul = candidate;
+                        this->instructions[candidate].setState("Execute");
+                        mul_shared_rs.clear(i);
+                        break;
+                    }
+                }
+            }
+            int mul_out = this->multiplier_divider.next_cycle(ready_mul);
             //size_t mem_out = this->memory.next_cycle();
 
             for(size_t i = 0; i < this->num_instructions; ++i){
@@ -453,7 +504,9 @@ public:
                                 size_t dest_tag = alu1.addInstruction(i, this->register_file.getRegister(src1), this->register_file.getRegister(src2));
                                 this->register_file.setTag(dest, dest_tag);
                                 this->register_file.setValidBit(dest, false);
-                                
+                                if(alu_shared_rs.areOperandsReady(i)){
+                                    this->instructions[i].setState("Reservation_ready");
+                                }
 
 
                                 if(i < this->num_instructions - 1){
@@ -491,13 +544,14 @@ public:
                                 this->instructions[i].stall();
                                 break;
                             }else{
-                                this->instructions[i].setState("Reservation_Ex");
+                                this->instructions[i].setState("Reservation");
                                 size_t src1 = this->instructions[i].getR2();
                                 size_t src2 = this->instructions[i].getR3();
                                 size_t dest = this->instructions[i].getR1();
                                 size_t dest_tag = alu1.addInstruction(i, this->register_file.getRegister(src1), this->register_file.getRegister(src2));
                                 this->register_file.setTag(dest, 20 + dest_tag);
                                 this->register_file.setValidBit(dest, false);
+                                
 
 
                                 if(i < this->num_instructions - 1){
