@@ -7,6 +7,7 @@
 # include <algorithm>
 # include <cassert>
 #include <unordered_map>
+
 class Instruction{
 private:
     std::string opcode;
@@ -14,14 +15,16 @@ private:
     std::string offset;
     std::string current_state;
     size_t instruction_count;
-    size_t start;
+    int start;
     size_t end;
     size_t duration;
     size_t stalls;
+    size_t structural_stalls;
+    size_t data_stalls;
 
 public:
 
-    Instruction(std::string instruction, size_t instruction_count): current_state("Out"), instruction_count(instruction_count),duration(0), stalls(0){
+    Instruction(std::string instruction, size_t instruction_count): current_state("Out"), instruction_count(instruction_count),duration(0), stalls(0), structural_stalls(0), start(-1){
         std::istringstream iss(instruction);
             std::string word;
 
@@ -69,16 +72,22 @@ public:
         return this->current_state == "Done";
     }
     bool hasStarted(){
-        return this->current_state != "Out";
+        return this->start != -1;
     }
     void setStart(size_t start){
         this->start = start;
     }
     void setEnd(size_t end){
         this->end = end;
+        this->current_state = "Done";
     }
-    void stall(){
+    void stall(std::string hazard){
         ++ this->stalls;
+        if(hazard == "structural"){
+            ++ this->structural_stalls;
+        }else{
+            ++ this->data_stalls;
+        }
     }
     void incrementDuration(){
         ++ this->duration;
@@ -247,7 +256,7 @@ class Reservation_station{
                         return i;
                     }
                 }
-            }else if(opcode == "Load"){
+            }else if(opcode == "LOAD"){
                 for(size_t i = 0; i < capacity; ++i){
                     if(!this->busy[i]){
                         this->busy[i] = true;
@@ -272,10 +281,12 @@ class Reservation_station{
         bool isFull(){
             return occupancy == capacity;
         }
-        Register getSrc1(size_t tag){
+        
+                     
+        Register& getSrc1(size_t tag){
             return src1[tag];
         }
-        Register getSrc2(size_t tag){
+        Register& getSrc2(size_t tag){
             return src2[tag];
         }
         bool areOperandsReady(size_t instruction_count, std::string load = " "){
@@ -299,8 +310,9 @@ class Reservation_station{
         void clear(size_t reservation_entry){
             -- this->occupancy;
             this->busy[reservation_entry] = false;
+            size_t instr = this->res_instruction_map[reservation_entry];
             this->res_instruction_map.erase(reservation_entry);
-            this->Insctuction_res_map.erase(this->res_instruction_map[reservation_entry]);
+            this->Insctuction_res_map.erase(instr);
         }
 
         
@@ -323,7 +335,7 @@ public:
 
     }
     int next_cycle(int ready = -1){
-        size_t out = this->pipeline[this->latency - 1];
+        int out = this->pipeline[this->latency - 1];
         for(size_t i = this-> latency - 1; i >= 1; --i){
             this->pipeline[i] = this->pipeline[i - 1];
         }
@@ -348,7 +360,7 @@ class Multiplier_Divider{
 private:
     size_t latency;
     size_t capacity;
-    std::vector<size_t> pipeline;
+    std::vector<int> pipeline;
     Reservation_station* reservation_station;
     Reservation_station* reservation_station_alu;
     Reservation_station* reservation_station_mem;
@@ -358,7 +370,7 @@ public:
     }
 
     int next_cycle(int ready = -1){
-        size_t out = this->pipeline[this->latency - 1];
+        int out = this->pipeline[this->latency - 1];
         for(size_t i = this-> latency - 1; i >= 1; --i){
             this->pipeline[i] = this->pipeline[i - 1];
         }
@@ -381,12 +393,12 @@ class Memory{
 private:
     size_t latency;
     size_t capacity;
-    std::vector<size_t> pipeline;
+    std::vector<int> pipeline;
     Reservation_station* reservation_station;
     Reservation_station* reservation_station_alu;
     Reservation_station* reservation_station_mul;
 public:
-    Memory(Reservation_station* reservation_station = nullptr, Reservation_station* reservation_station_alu = nullptr, Reservation_station* reservation_station_mul = nullptr, size_t latency = 0, size_t capacity = 0):reservation_station(reservation_station), reservation_station_alu(reservation_station_alu), reservation_station_mul(reservation_station_mul), latency(latency), pipeline(latency,0), capacity(capacity){
+    Memory(Reservation_station* reservation_station = nullptr, Reservation_station* reservation_station_alu = nullptr, Reservation_station* reservation_station_mul = nullptr, size_t latency = 0, size_t capacity = 0):reservation_station(reservation_station), reservation_station_alu(reservation_station_alu), reservation_station_mul(reservation_station_mul), latency(latency), pipeline(latency,-1), capacity(capacity){
 
     }
     bool isFull(){
@@ -397,16 +409,17 @@ public:
         size_t tag = this->reservation_station->addInstruction(instruction_count, src1, src2, opcode);  
         return tag;      
     }
+    int next_cycle(int ready = -1){
+        int out = this->pipeline[this->latency - 1];
+        for(size_t i = this-> latency - 1; i >= 1; --i){
+            this->pipeline[i] = this->pipeline[i - 1];
+        }
+        this->pipeline[0] = ready;
+               
+        return out;
+    }
+
 };
-
-
-
-
-
-
-
-
-
 
 
 class Tomasulo_simulator{
@@ -467,17 +480,20 @@ public:
 
         this->remaining_instructions = this->num_instructions;
         
-
-        while(this->remaining_instructions){
-            //break;
+        this->issue = 0; 
+        this->instructions[0].setStart(1);
+        this->instructions[0].setState("Issue"); 
+        while(this->remaining_instructions > 0){
+            
             ++this->cycle;
-            std::string state_1 = this->instructions[alu_shared_rs.getInstruction(0)].getState();
-            std::string state_2 = this->instructions[alu_shared_rs.getInstruction(1)].getState();
-            if(!alu_shared_rs.isbusy(0)){
-                state_1 = "NOP";
+            std::string state_1 = "NOP";
+            std::string state_2 = "NOP";
+            
+            if(alu_shared_rs.isbusy(0)){
+                state_1 = this->instructions[alu_shared_rs.getInstruction(0)].getState();
             }
-            if(!alu_shared_rs.isbusy(1)){
-                state_2 = "NOP";
+            if(alu_shared_rs.isbusy(1)){
+                state_2 = this->instructions[alu_shared_rs.getInstruction(1)].getState();
             }
             int ready_1 = -1;
             int ready_2 = -1;
@@ -507,8 +523,22 @@ public:
                 }
             }
             int mul_out = this->multiplier_divider.next_cycle(ready_mul);
-            //size_t mem_out = this->memory.next_cycle();
+
+            int ready_mem = -1;
+            for(size_t i = 0; i < this->load_store_capacity; ++i){
+                if(load_store_shared_rs.isbusy(i)){
+                    int candidate = load_store_shared_rs.getInstruction(i);
+                    if(this->instructions[candidate].getState() == "Reservation_ready"){
+                        ready_mem = candidate;
+                        this->instructions[candidate].setState("Execute");
+                        load_store_shared_rs.clear(i);
+                        break;
+                    }
+                }
+            }
+            int mem_out = this->memory.next_cycle(ready_mem);
             if(mul_out != -1){
+                
                 size_t tag = 10 + mul_shared_rs.getReservationEntry(mul_out);
                 for(size_t i = 0; i < this->add_sub_capacity; ++i){
                     if(alu_shared_rs.isbusy(i)){
@@ -579,7 +609,8 @@ public:
                 }
             }
             if(alu1_out != -1){
-                size_t tag = mul_shared_rs.getReservationEntry(mul_out);
+                
+                size_t tag = alu_shared_rs.getReservationEntry(alu1_out); 
                 for(size_t i = 0; i < this->add_sub_capacity; ++i){
                     if(alu_shared_rs.isbusy(i)){
                         size_t candidate = alu_shared_rs.getInstruction(i);
@@ -649,7 +680,8 @@ public:
                 }
             }
             if(alu2_out != -1){
-                size_t tag = mul_shared_rs.getReservationEntry(mul_out);
+                
+                size_t tag = alu_shared_rs.getReservationEntry(alu2_out); 
                 for(size_t i = 0; i < this->add_sub_capacity; ++i){
                     if(alu_shared_rs.isbusy(i)){
                         size_t candidate = alu_shared_rs.getInstruction(i);
@@ -719,7 +751,8 @@ public:
                 }
             }
             if(mem_out != -1){
-                size_t tag = 20 + mul_shared_rs.getReservationEntry(mul_out);
+                
+                size_t tag = 20 + load_store_shared_rs.getReservationEntry(mem_out);
                 for(size_t i = 0; i < this->add_sub_capacity; ++i){
                     if(alu_shared_rs.isbusy(i)){
                         size_t candidate = alu_shared_rs.getInstruction(i);
@@ -793,15 +826,17 @@ public:
             for(size_t i = 0; i < this->num_instructions; ++i){
 
                 if(this->instructions[i].isDone()){
+                    std::cout<<"Done";                    
                     continue;
                 }else if(this->instructions[i].hasStarted()){
+                    
                     this->instructions[i].incrementDuration();
-
+                
                     // check if the instruction in issue stage can proceed to the next stage
                     if(i == this->issue){
                         if(this->instructions[i].getOpcode() == "ADD" || this->instructions[i].getOpcode() == "SUB"){
                             if(this->alu1.isFull()){
-                                this->instructions[i].stall();
+                                this->instructions[i].stall("structural");
                                 break;
                             }else{
                                 this->instructions[i].setState("Reservation_Ex");
@@ -825,14 +860,14 @@ public:
                             }
                         }else if(this->instructions[i].getOpcode() == "MUL" || this->instructions[i].getOpcode() == "DIV"){
                             if(this->multiplier_divider.isFull()){
-                                this->instructions[i].stall();
+                                this->instructions[i].stall("structural");
                                 break;
                             }else{
                                 this->instructions[i].setState("Reservation_Ex");
                                 size_t src1 = this->instructions[i].getR2();
                                 size_t src2 = this->instructions[i].getR3();
                                 size_t dest = this->instructions[i].getR1();
-                                size_t dest_tag = alu1.addInstruction(i, this->register_file.getRegister(src1), this->register_file.getRegister(src2));
+                                size_t dest_tag = multiplier_divider.addInstruction(i, this->register_file.getRegister(src1), this->register_file.getRegister(src2));
                                 this->register_file.setTag(dest, 10 + dest_tag);
                                 this->register_file.setValidBit(dest, false);
 
@@ -847,7 +882,7 @@ public:
                             }
                         }else if(this->instructions[i].getOpcode() == "LOAD" || this->instructions[i].getOpcode() == "STORE"){
                             if(this->memory.isFull()){
-                                this->instructions[i].stall();
+                                this->instructions[i].stall("structural");
                                 break;
                             }else{
                                 this->instructions[i].setState("Reservation");
@@ -875,7 +910,7 @@ public:
                     }else{
                         
                         if(this->instructions[i].getState() == "Reservation_Ex"){
-
+                            this->instructions[i].stall("data");
                         }else if(this->instructions[i].getState() == "Execute"){
                             if(this->instructions[i].getOpcode() == "ADD" || this->instructions[i].getOpcode() == "SUB"){
                                 if(alu1_out == i){
@@ -895,9 +930,21 @@ public:
                                     
                                 }
                             }else if(this->instructions[i].getOpcode() == "LOAD" || this->instructions[i].getOpcode() == "STORE"){
-
+                                if(mem_out == i){
+                                    if(this->instructions[i].getOpcode() == "LOAD"){
+                                        common_data_bus.push(i);
+                                        this->instructions[i].setState("CDB");
+                                    }else{
+                                        this->instructions[i].setState("Done");
+                                        this->instructions[i].setEnd(this->cycle);
+                                        this->instructions[i].print_summary();
+                                        --this->remaining_instructions;
+                                    }
+                                }
                             }
                             
+                        }else if (this->instructions[i].getState() == "Reservation_ready"){
+                            this->instructions[i].stall("structural");
                         }
 
                     }
@@ -915,12 +962,13 @@ public:
                 this->instructions[instruction].setEnd(this->cycle);
                 this->instructions[instruction].print_summary();
                 -- this->remaining_instructions;
+                
                 if(!common_data_bus.empty()){
                     std::queue<size_t> temp;
                     while(!common_data_bus.empty()){
                         size_t k = common_data_bus.front();
                         common_data_bus.pop();
-                        this->instructions[k].stall();                        
+                        this->instructions[k].stall("structural");                        
                     }
                 }
             }
