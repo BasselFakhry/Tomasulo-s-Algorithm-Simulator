@@ -6,10 +6,12 @@
 # include <sstream>
 # include <algorithm>
 # include <cassert>
+#include <unordered_map>
+
 class Instruction{
 private:
     std::string opcode;
-    std::string r1, r2, r3;
+    size_t r1, r2, r3;
     std::string offset;
     std::string current_state;
     size_t instruction_count;
@@ -30,30 +32,37 @@ public:
                 if(word == "ADD" || word == "SUB" || word == "MUL" || word == "DIV"){                    
                     iss >> word;
                     word.erase(std::remove(word.begin(), word.end(), ','), word.end());
-                    this->r1 = word;
+                    std::string temp = word;
+                    this->r1 = temp[1]-'0';
                     iss >> word;
                     word.erase(std::remove(word.begin(), word.end(), ','), word.end());
-                    this->r2 = word;
+                    temp = word;
+                    this->r2 = temp[1]-'0';
                     iss >> word;
                     word.erase(std::remove(word.begin(), word.end(), ','), word.end());
-                    this->r3 = word;
+                    temp = word;
+                    this->r3 = temp[1]-'0';
                 }else if(word == "LOAD"){
                     iss >> word;
                     word.erase(std::remove(word.begin(), word.end(), ','), word.end());
-                    this->r1 = word;
+                    std::string temp = word;
+                    this->r1 = temp[1]-'0';
                     iss >> word;
                     word.erase(std::remove(word.begin(), word.end(), ','), word.end());
                     size_t pos = word.find('(');
                     this-> offset = word.substr(0, pos);
-                    this->r2 = word.substr(pos + 1, word.length() - pos - 2);
+                    temp = word.substr(pos + 1, word.length() - pos - 2);
+                    this->r2 = temp[1]-'0';
                 }else if(word == "STORE"){
                     iss >> word;
                     word.erase(std::remove(word.begin(), word.end(), ','), word.end());
                     size_t pos = word.find('(');
                     this->offset = word.substr(0, pos);
-                    this->r2 = word.substr(pos + 1, word.length() - pos - 2);
+                    std::string temp = word.substr(pos + 1, word.length() - pos - 2);
+                    this->r2 = temp[1]-'0';
                     iss >> word;
-                    this->r1 = word;
+                    temp = word;
+                    this->r1 = temp[1]-'0';
                 }
             }
     }
@@ -77,6 +86,15 @@ public:
     }
     void setState(std::string state){
         this->current_state = state;
+    }
+    size_t getR1(){
+
+    }
+    size_t getR2(){
+        return this->r2;
+    }
+    size_t getR3(){
+        return this->r3;
     }
     size_t getStalls(){
         return this->stalls;
@@ -163,15 +181,35 @@ class Register{
 };
 
 class Register_file{
-    private:
-        Register registers[8];
-    public:
-
-        Register_file(){
-            for (int i = 0; i < 8; ++i) {
-                registers[i] = Register();
-            }
+private:
+    Register registers[8];
+public:
+    Register_file(){
+        for (int i = 0; i < 8; ++i) {
+            registers[i] = Register();
         }
+    }
+    bool isValid(size_t index){
+        return registers[index].isValid();
+    }
+    size_t getValue(size_t index){
+        return registers[index].getValue();
+    }
+    size_t getTag(size_t index){
+        return registers[index].getTag();
+    }
+    void setValue(size_t index, size_t value){
+        registers[index].setValue(value);
+    }
+    void setValidBit(size_t index, bool valid_bit){
+        registers[index].setValidBit(valid_bit);
+    }
+    void setTag(size_t index, size_t tag){
+        registers[index].setTag(tag);
+    }
+    Register getRegister(size_t index){
+        return registers[index];
+    }
           
         
 };
@@ -181,24 +219,31 @@ class Reservation_station{
     private:
         size_t capacity;
         size_t occupancy;
-        bool busy;
+        std::vector<bool> busy;
         std::vector<Register> src1;
         std::vector<Register> src2;
-        
+        std::unordered_map<size_t, size_t> Insctuction_res_map;
+        std::unordered_map<size_t, size_t> res_instruction_map;
+
     public:
-        Reservation_station(size_t capacity): capacity(capacity), occupancy(0), busy(false), src1(capacity,Register(false)), src2(capacity,Register(false)){
+        Reservation_station(size_t capacity): capacity(capacity), occupancy(0), busy(capacity,false), src1(capacity,Register(false)), src2(capacity,Register(false)){
                 
         }
 
-        size_t addInstruction(Register src1, Register src2){
+        size_t addInstruction(size_t instruction_count, Register src1, Register src2){
             assert(!isFull());
             for(size_t i = 0; i < capacity; ++i){
-                if(!this->src1[i].isValid()){
-                    this->src1[i] = src1;
-                    this->src2[i] = src2;
-                    if(++this->occupancy == capacity){
-                        this->busy = true;
-                    }
+                if(!this->busy[i]){
+                    this->busy[i] = true;
+                    this->src1[i].setValidBit(src1.isValid());
+                    this->src2[i].setValidBit(src2.isValid());
+                    this->src1[i].setValue(src1.getValue());
+                    this->src2[i].setValue(src2.getValue());
+                    this->src1[i].setTag(src1.getTag());
+                    this->src2[i].setTag(src2.getTag()); 
+                    this->Insctuction_res_map[instruction_count] = i;
+                    this->res_instruction_map[i] = instruction_count;                   
+                    ++ this->occupancy;
                     return i;
                 }
             }
@@ -212,6 +257,10 @@ class Reservation_station{
         Register getSrc2(size_t tag){
             return src2[tag];
         }
+        bool areOperandsReady(size_t instruction_count){
+
+        }
+
         
 };
     
@@ -223,10 +272,12 @@ private:
     size_t latency;
     size_t capacity;
     std::vector<size_t> pipeline;
-    Reservation_station reservation_station;
+    Reservation_station* reservation_station;
+    Reservation_station* reservation_station_mul;
+    Reservation_station* reservation_station_mem;
 
 public:
-    Alu(size_t latency, size_t capacity, Reservation_station reservation_station):latency(latency), capacity(capacity), pipeline(latency,0), reservation_station(reservation_station){
+    Alu(Reservation_station* reservation_station, Reservation_station* reservation_station_mul, Reservation_station* reservation_station_mem, size_t latency, size_t capacity): reservation_station(reservation_station), reservation_station_mul(reservation_station_mul), reservation_station_mem(reservation_station_mem), latency(latency), capacity(capacity), pipeline(latency,0){
 
     }
     size_t next_cycle(){
@@ -238,7 +289,12 @@ public:
         return out;
     }
     bool isFull(){
-        return this->reservation_station.isFull();
+        return this->reservation_station->isFull();
+    }
+    size_t addInstruction(size_t instruction_count, Register src1, Register src2){
+        assert(!isFull());
+        size_t tag = this->reservation_station->addInstruction(instruction_count, src1, src2);     
+        return tag;   
     }
 
     
@@ -250,9 +306,11 @@ private:
     size_t latency;
     size_t capacity;
     std::vector<size_t> pipeline;
-    Reservation_station reservation_station;
+    Reservation_station* reservation_station;
+    Reservation_station* reservation_station_alu;
+    Reservation_station* reservation_station_mem;
 public:
-    Multiplier_Divider(size_t latency, size_t capacity):latency(latency), pipeline(latency,0), capacity(capacity), reservation_station(capacity){
+    Multiplier_Divider(Reservation_station* reservation_station, Reservation_station* reservation_station_alu, Reservation_station* reservation_station_mem, size_t latency, size_t capacity):reservation_station(reservation_station), reservation_station_alu(reservation_station_alu), reservation_station_mem(reservation_station_mem), latency(latency), pipeline(latency,0), capacity(capacity){
 
     }
 
@@ -265,9 +323,13 @@ public:
         return out;
     }
     bool isFull(){
-        return this->reservation_station.isFull();
+        return this->reservation_station->isFull();
     }
-    
+    size_t addInstruction(size_t instruction_count, Register src1, Register src2){
+        assert(!isFull());
+        size_t tag = this->reservation_station->addInstruction(instruction_count, src1, src2); 
+        return tag;       
+    }
 
 };
 
@@ -276,13 +338,20 @@ private:
     size_t latency;
     size_t capacity;
     std::vector<size_t> pipeline;
-    Reservation_station reservation_station;
+    Reservation_station* reservation_station;
+    Reservation_station* reservation_station_alu;
+    Reservation_station* reservation_station_mul;
 public:
-    Memory(size_t latency, size_t capacity):latency(latency), capacity(capacity), pipeline(latency,0), reservation_station(capacity){
-        
+    Memory(Reservation_station* reservation_station, Reservation_station* reservation_station_alu, Reservation_station* reservation_station_mul, size_t latency, size_t capacity):reservation_station(reservation_station), reservation_station_alu(reservation_station_alu), reservation_station_mul(reservation_station_mul), latency(latency), pipeline(latency,0), capacity(capacity){
+
     }
     bool isFull(){
-        return this->reservation_station.isFull();
+        return this->reservation_station->isFull();
+    }
+    size_t addInstruction(size_t instruction_count, Register src1, Register src2){
+        assert(!isFull());
+        size_t tag = this->reservation_station->addInstruction(instruction_count, src1, src2);  
+        return tag;      
     }
 };
 
@@ -320,7 +389,7 @@ private:
     
 
 public:
-    Tomasulo_simulator(std::string code): alu1(2, 2, Reservation_station(2)), alu2(1, 1, Reservation_station(1)), multiplier_divider(0, 0), memory(0, 0),issue(0){
+    Tomasulo_simulator(std::string code): alu1(&Reservation_station(2), &Reservation_station(2), &Reservation_station(2),2, 2), alu2(&Reservation_station(2), &Reservation_station(2), &Reservation_station(2),2, 2), multiplier_divider(&Reservation_station(2), &Reservation_station(2), &Reservation_station(2),2, 2), memory(&Reservation_station(2), &Reservation_station(2), &Reservation_station(2),2, 2),issue(0){
         this->num_instructions = 0;
         this->cycle = 0;
         this->add_sub_time = 2;
@@ -333,10 +402,12 @@ public:
         this->load_store_capacity = 4;
         this->register_file = Register_file();
         Reservation_station alu_shared_rs (this->add_sub_capacity);
-        this->alu1 = Alu(add_sub_time, add_sub_capacity, alu_shared_rs);
-        this->alu2 = Alu(mul_time, mul_capacity, alu_shared_rs);
-        this->multiplier_divider = Multiplier_Divider(mul_time, mul_capacity);
-        this->memory = Memory(load_store_time, load_store_capacity);
+        Reservation_station mul_shared_rs(load_store_capacity);
+        Reservation_station load_store_shared_rs(load_store_capacity);
+        this->alu1 = Alu(&alu_shared_rs, &mul_shared_rs, &load_store_shared_rs, add_sub_time, add_sub_capacity);
+        this->alu2 = Alu(&alu_shared_rs, &mul_shared_rs, &load_store_shared_rs, add_sub_time, add_sub_capacity);
+        this->multiplier_divider = Multiplier_Divider(&mul_shared_rs, &alu_shared_rs, &load_store_shared_rs, mul_time, mul_capacity);
+        this->memory = Memory(&load_store_shared_rs, &alu_shared_rs, &mul_shared_rs, load_store_time, load_store_capacity);
         this->remaining_instructions = 0;
         
         std::ifstream file(code);
@@ -354,7 +425,7 @@ public:
         
 
         while(this->remaining_instructions){
-
+            break;
             ++this->cycle;
 
             size_t alu1_out = this->alu1.next_cycle();
@@ -377,6 +448,13 @@ public:
                                 break;
                             }else{
                                 this->instructions[i].setState("Reservation_Ex");
+                                size_t src1 = this->instructions[i].getR2();
+                                size_t src2 = this->instructions[i].getR3();
+                                size_t dest = this->instructions[i].getR1();
+                                size_t dest_tag = alu1.addInstruction(i, this->register_file.getRegister(src1), this->register_file.getRegister(src2));
+                                this->register_file.setTag(dest, dest_tag);
+                                this->register_file.setValidBit(dest, false);
+                                
 
 
                                 if(i < this->num_instructions - 1){
@@ -392,7 +470,15 @@ public:
                                 this->instructions[i].stall();
                                 break;
                             }else{
-                                
+                                this->instructions[i].setState("Reservation_Ex");
+                                size_t src1 = this->instructions[i].getR2();
+                                size_t src2 = this->instructions[i].getR3();
+                                size_t dest = this->instructions[i].getR1();
+                                size_t dest_tag = alu1.addInstruction(i, this->register_file.getRegister(src1), this->register_file.getRegister(src2));
+                                this->register_file.setTag(dest, 10 + dest_tag);
+                                this->register_file.setValidBit(dest, false);
+
+
                                 if(i < this->num_instructions - 1){
                                     this->instructions[i+1].setStart(this->cycle);
                                     this->instructions[i+1].setState("Issue");
@@ -406,6 +492,14 @@ public:
                                 this->instructions[i].stall();
                                 break;
                             }else{
+                                this->instructions[i].setState("Reservation_Ex");
+                                size_t src1 = this->instructions[i].getR2();
+                                size_t src2 = this->instructions[i].getR3();
+                                size_t dest = this->instructions[i].getR1();
+                                size_t dest_tag = alu1.addInstruction(i, this->register_file.getRegister(src1), this->register_file.getRegister(src2));
+                                this->register_file.setTag(dest, 20 + dest_tag);
+                                this->register_file.setValidBit(dest, false);
+
 
                                 if(i < this->num_instructions - 1){
                                     this->instructions[i+1].setStart(this->cycle);
@@ -505,6 +599,7 @@ int main(int argc, char *argv[]){
     //std::cout << "File path: " << file_path << std::endl;
     Tomasulo_simulator simulator(file_path);
     simulator.print();
+    
 
     return 0;
 }
