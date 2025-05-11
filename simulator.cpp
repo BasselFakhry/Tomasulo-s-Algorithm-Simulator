@@ -7,7 +7,6 @@
 # include <algorithm>
 # include <cassert>
 #include <unordered_map>
-
 class Instruction{
 private:
     std::string opcode;
@@ -88,7 +87,7 @@ public:
         this->current_state = state;
     }
     size_t getR1(){
-
+        return this->r1;
     }
     size_t getR2(){
         return this->r2;
@@ -257,9 +256,9 @@ class Reservation_station{
         Register getSrc2(size_t tag){
             return src2[tag];
         }
-        bool areOperandsReady(size_t instruction_count){
+        /*bool areOperandsReady(size_t instruction_count){
 
-        }
+        }*/
 
         
 };
@@ -277,7 +276,7 @@ private:
     Reservation_station* reservation_station_mem;
 
 public:
-    Alu(Reservation_station* reservation_station, Reservation_station* reservation_station_mul, Reservation_station* reservation_station_mem, size_t latency, size_t capacity): reservation_station(reservation_station), reservation_station_mul(reservation_station_mul), reservation_station_mem(reservation_station_mem), latency(latency), capacity(capacity), pipeline(latency,0){
+    Alu(Reservation_station* reservation_station = nullptr, Reservation_station* reservation_station_mul = nullptr, Reservation_station* reservation_station_mem = nullptr, size_t latency = 0, size_t capacity = 0): reservation_station(reservation_station), reservation_station_mul(reservation_station_mul), reservation_station_mem(reservation_station_mem), latency(latency), capacity(capacity), pipeline(latency,0){
 
     }
     size_t next_cycle(){
@@ -310,7 +309,7 @@ private:
     Reservation_station* reservation_station_alu;
     Reservation_station* reservation_station_mem;
 public:
-    Multiplier_Divider(Reservation_station* reservation_station, Reservation_station* reservation_station_alu, Reservation_station* reservation_station_mem, size_t latency, size_t capacity):reservation_station(reservation_station), reservation_station_alu(reservation_station_alu), reservation_station_mem(reservation_station_mem), latency(latency), pipeline(latency,0), capacity(capacity){
+    Multiplier_Divider(Reservation_station* reservation_station = nullptr, Reservation_station* reservation_station_alu = nullptr, Reservation_station* reservation_station_mem = nullptr, size_t latency = 0, size_t capacity = 0):reservation_station(reservation_station), reservation_station_alu(reservation_station_alu), reservation_station_mem(reservation_station_mem), latency(latency), pipeline(latency,0), capacity(capacity){
 
     }
 
@@ -342,7 +341,7 @@ private:
     Reservation_station* reservation_station_alu;
     Reservation_station* reservation_station_mul;
 public:
-    Memory(Reservation_station* reservation_station, Reservation_station* reservation_station_alu, Reservation_station* reservation_station_mul, size_t latency, size_t capacity):reservation_station(reservation_station), reservation_station_alu(reservation_station_alu), reservation_station_mul(reservation_station_mul), latency(latency), pipeline(latency,0), capacity(capacity){
+    Memory(Reservation_station* reservation_station = nullptr, Reservation_station* reservation_station_alu = nullptr, Reservation_station* reservation_station_mul = nullptr, size_t latency = 0, size_t capacity = 0):reservation_station(reservation_station), reservation_station_alu(reservation_station_alu), reservation_station_mul(reservation_station_mul), latency(latency), pipeline(latency,0), capacity(capacity){
 
     }
     bool isFull(){
@@ -389,7 +388,7 @@ private:
     
 
 public:
-    Tomasulo_simulator(std::string code): alu1(&Reservation_station(2), &Reservation_station(2), &Reservation_station(2),2, 2), alu2(&Reservation_station(2), &Reservation_station(2), &Reservation_station(2),2, 2), multiplier_divider(&Reservation_station(2), &Reservation_station(2), &Reservation_station(2),2, 2), memory(&Reservation_station(2), &Reservation_station(2), &Reservation_station(2),2, 2),issue(0){
+    Tomasulo_simulator(std::string code){
         this->num_instructions = 0;
         this->cycle = 0;
         this->add_sub_time = 2;
