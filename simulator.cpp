@@ -508,12 +508,11 @@ public:
                                     this->instructions[i].setState("Reservation_ready");
                                 }
 
-
                                 if(i < this->num_instructions - 1){
                                     this->instructions[i+1].setStart(this->cycle);
                                     this->instructions[i+1].setState("Issue");
                                     this->issue = i + 1;
-                                    this->instructions[i+1].incrementDuration();
+                                    this->instructions[i+1].incrementDuration();                                    
                                     break;
                                 }
                             }
