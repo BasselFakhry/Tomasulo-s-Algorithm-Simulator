@@ -229,24 +229,43 @@ class Reservation_station{
                 
         }
 
-        size_t addInstruction(size_t instruction_count, Register src1, Register src2){
+        size_t addInstruction(size_t instruction_count, Register src1, Register src2 = NULL, std::string opcode = "Arithmetic"){
             assert(!isFull());
-            for(size_t i = 0; i < capacity; ++i){
-                if(!this->busy[i]){
-                    this->busy[i] = true;
-                    this->src1[i].setValidBit(src1.isValid());
-                    this->src2[i].setValidBit(src2.isValid());
-                    this->src1[i].setValue(src1.getValue());
-                    this->src2[i].setValue(src2.getValue());
-                    this->src1[i].setTag(src1.getTag());
-                    this->src2[i].setTag(src2.getTag()); 
-                    this->Insctuction_res_map[instruction_count] = i;
-                    this->res_instruction_map[i] = instruction_count;                   
-                    ++ this->occupancy;
-                    return i;
+            if(opcode == "ALL"){                
+                for(size_t i = 0; i < capacity; ++i){
+                    if(!this->busy[i]){
+                        this->busy[i] = true;
+                        this->src1[i].setValidBit(src1.isValid());
+                        this->src2[i].setValidBit(src2.isValid());
+                        this->src1[i].setValue(src1.getValue());
+                        this->src2[i].setValue(src2.getValue());
+                        this->src1[i].setTag(src1.getTag());
+                        this->src2[i].setTag(src2.getTag()); 
+                        this->Insctuction_res_map[instruction_count] = i;
+                        this->res_instruction_map[i] = instruction_count;                   
+                        ++ this->occupancy;
+                        return i;
+                    }
+                }
+            }else if(opcode == "Load"){
+                for(size_t i = 0; i < capacity; ++i){
+                    if(!this->busy[i]){
+                        this->busy[i] = true;
+                        this->src1[i].setValidBit(src1.isValid());
+                        this->src1[i].setValue(src1.getValue());
+                        this->src1[i].setTag(src1.getTag());
+                        this->Insctuction_res_map[instruction_count] = i;
+                        this->res_instruction_map[i] = instruction_count;                   
+                        ++ this->occupancy;
+                        return i;
+                    }
                 }
             }
+            return 0;
         }
+        
+        
+
         bool isbusy(size_t reservation_entry){
             return this->busy[reservation_entry];
         }
@@ -259,8 +278,12 @@ class Reservation_station{
         Register getSrc2(size_t tag){
             return src2[tag];
         }
-        bool areOperandsReady(size_t instruction_count){
+        bool areOperandsReady(size_t instruction_count, std::string load = " "){
+            
             size_t tag = Insctuction_res_map[instruction_count];
+            if(load == "LOAD" && this->src1[tag].isValid()){
+                return true;
+            }
             if(this->src1[tag].isValid() && this->src2[tag].isValid()){
                 return true;
             }else{
@@ -269,6 +292,9 @@ class Reservation_station{
         }
         size_t getInstruction(size_t reservation_entry){
             return this->res_instruction_map[reservation_entry];
+        }
+        size_t getReservationEntry(size_t instruction_count){
+            return this->Insctuction_res_map[instruction_count];
         }
         void clear(size_t reservation_entry){
             -- this->occupancy;
@@ -366,9 +392,9 @@ public:
     bool isFull(){
         return this->reservation_station->isFull();
     }
-    size_t addInstruction(size_t instruction_count, Register src1, Register src2){
+    size_t addInstruction(size_t instruction_count, Register src1, Register src2 = NULL, std::string opcode = "ALL"){
         assert(!isFull());
-        size_t tag = this->reservation_station->addInstruction(instruction_count, src1, src2);  
+        size_t tag = this->reservation_station->addInstruction(instruction_count, src1, src2, opcode);  
         return tag;      
     }
 };
@@ -443,7 +469,7 @@ public:
         
 
         while(this->remaining_instructions){
-            break;
+            //break;
             ++this->cycle;
             std::string state_1 = this->instructions[alu_shared_rs.getInstruction(0)].getState();
             std::string state_2 = this->instructions[alu_shared_rs.getInstruction(1)].getState();
@@ -482,6 +508,287 @@ public:
             }
             int mul_out = this->multiplier_divider.next_cycle(ready_mul);
             //size_t mem_out = this->memory.next_cycle();
+            if(mul_out != -1){
+                size_t tag = 10 + mul_shared_rs.getReservationEntry(mul_out);
+                for(size_t i = 0; i < this->add_sub_capacity; ++i){
+                    if(alu_shared_rs.isbusy(i)){
+                        size_t candidate = alu_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            size_t in_rs = alu_shared_rs.getReservationEntry(candidate);
+                            bool flag = false;
+                            if(alu_shared_rs.getSrc1(in_rs).getTag() == tag){
+                                alu_shared_rs.getSrc1(in_rs).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(alu_shared_rs.getSrc2(in_rs).getTag() == tag){
+                                alu_shared_rs.getSrc2(in_rs).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(alu_shared_rs.areOperandsReady(candidate)){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                            
+                        }
+                }
+                for(size_t i = 0; i < this->mul_capacity; ++i){
+                    if(mul_shared_rs.isbusy(i)){
+                        size_t candidate = mul_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            
+                            bool flag = false;
+                            if(mul_shared_rs.getSrc1(i).getTag() == tag){
+                                mul_shared_rs.getSrc1(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(mul_shared_rs.getSrc2(i).getTag() == tag){
+                                mul_shared_rs.getSrc2(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(mul_shared_rs.areOperandsReady(candidate)){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                    }
+                }                
+                for(size_t i = 0; i < this->load_store_capacity; ++i){
+                    if(load_store_shared_rs.isbusy(i)){
+                        size_t candidate = load_store_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            
+                            bool flag = false;
+                            if(load_store_shared_rs.getSrc1(i).getTag() == tag){
+                                load_store_shared_rs.getSrc1(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(load_store_shared_rs.getSrc2(i).getTag() == tag){
+                                load_store_shared_rs.getSrc2(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(load_store_shared_rs.areOperandsReady(candidate,this->instructions[candidate].getOpcode())){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(alu1_out != -1){
+                size_t tag = mul_shared_rs.getReservationEntry(mul_out);
+                for(size_t i = 0; i < this->add_sub_capacity; ++i){
+                    if(alu_shared_rs.isbusy(i)){
+                        size_t candidate = alu_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            size_t in_rs = alu_shared_rs.getReservationEntry(candidate);
+                            bool flag = false;
+                            if(alu_shared_rs.getSrc1(in_rs).getTag() == tag){
+                                alu_shared_rs.getSrc1(in_rs).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(alu_shared_rs.getSrc2(in_rs).getTag() == tag){
+                                alu_shared_rs.getSrc2(in_rs).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(alu_shared_rs.areOperandsReady(candidate)){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                            
+                        }
+                }
+                for(size_t i = 0; i < this->mul_capacity; ++i){
+                    if(mul_shared_rs.isbusy(i)){
+                        size_t candidate = mul_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            
+                            bool flag = false;
+                            if(mul_shared_rs.getSrc1(i).getTag() == tag){
+                                mul_shared_rs.getSrc1(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(mul_shared_rs.getSrc2(i).getTag() == tag){
+                                mul_shared_rs.getSrc2(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(mul_shared_rs.areOperandsReady(candidate)){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                    }
+                }                
+                for(size_t i = 0; i < this->load_store_capacity; ++i){
+                    if(load_store_shared_rs.isbusy(i)){
+                        size_t candidate = load_store_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            
+                            bool flag = false;
+                            if(load_store_shared_rs.getSrc1(i).getTag() == tag){
+                                load_store_shared_rs.getSrc1(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(load_store_shared_rs.getSrc2(i).getTag() == tag){
+                                load_store_shared_rs.getSrc2(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(load_store_shared_rs.areOperandsReady(candidate,this->instructions[candidate].getOpcode())){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(alu2_out != -1){
+                size_t tag = mul_shared_rs.getReservationEntry(mul_out);
+                for(size_t i = 0; i < this->add_sub_capacity; ++i){
+                    if(alu_shared_rs.isbusy(i)){
+                        size_t candidate = alu_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            size_t in_rs = alu_shared_rs.getReservationEntry(candidate);
+                            bool flag = false;
+                            if(alu_shared_rs.getSrc1(in_rs).getTag() == tag){
+                                alu_shared_rs.getSrc1(in_rs).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(alu_shared_rs.getSrc2(in_rs).getTag() == tag){
+                                alu_shared_rs.getSrc2(in_rs).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(alu_shared_rs.areOperandsReady(candidate)){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                            
+                        }
+                }
+                for(size_t i = 0; i < this->mul_capacity; ++i){
+                    if(mul_shared_rs.isbusy(i)){
+                        size_t candidate = mul_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            
+                            bool flag = false;
+                            if(mul_shared_rs.getSrc1(i).getTag() == tag){
+                                mul_shared_rs.getSrc1(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(mul_shared_rs.getSrc2(i).getTag() == tag){
+                                mul_shared_rs.getSrc2(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(mul_shared_rs.areOperandsReady(candidate)){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                    }
+                }                
+                for(size_t i = 0; i < this->load_store_capacity; ++i){
+                    if(load_store_shared_rs.isbusy(i)){
+                        size_t candidate = load_store_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            
+                            bool flag = false;
+                            if(load_store_shared_rs.getSrc1(i).getTag() == tag){
+                                load_store_shared_rs.getSrc1(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(load_store_shared_rs.getSrc2(i).getTag() == tag){
+                                load_store_shared_rs.getSrc2(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(load_store_shared_rs.areOperandsReady(candidate,this->instructions[candidate].getOpcode())){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            if(mem_out != -1){
+                size_t tag = 20 + mul_shared_rs.getReservationEntry(mul_out);
+                for(size_t i = 0; i < this->add_sub_capacity; ++i){
+                    if(alu_shared_rs.isbusy(i)){
+                        size_t candidate = alu_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            size_t in_rs = alu_shared_rs.getReservationEntry(candidate);
+                            bool flag = false;
+                            if(alu_shared_rs.getSrc1(in_rs).getTag() == tag){
+                                alu_shared_rs.getSrc1(in_rs).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(alu_shared_rs.getSrc2(in_rs).getTag() == tag){
+                                alu_shared_rs.getSrc2(in_rs).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(alu_shared_rs.areOperandsReady(candidate)){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                            
+                        }
+                }
+                for(size_t i = 0; i < this->mul_capacity; ++i){
+                    if(mul_shared_rs.isbusy(i)){
+                        size_t candidate = mul_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            
+                            bool flag = false;
+                            if(mul_shared_rs.getSrc1(i).getTag() == tag){
+                                mul_shared_rs.getSrc1(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(mul_shared_rs.getSrc2(i).getTag() == tag){
+                                mul_shared_rs.getSrc2(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(mul_shared_rs.areOperandsReady(candidate)){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                    }
+                }                
+                for(size_t i = 0; i < this->load_store_capacity; ++i){
+                    if(load_store_shared_rs.isbusy(i)){
+                        size_t candidate = load_store_shared_rs.getInstruction(i);
+                        if(this->instructions[candidate].getState() == "Reservation_Ex"){
+                            
+                            bool flag = false;
+                            if(load_store_shared_rs.getSrc1(i).getTag() == tag){
+                                load_store_shared_rs.getSrc1(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(load_store_shared_rs.getSrc2(i).getTag() == tag){
+                                load_store_shared_rs.getSrc2(i).setValidBit(true);
+                                flag = true;                    
+                            }
+                            if(flag){
+                                if(load_store_shared_rs.areOperandsReady(candidate,this->instructions[candidate].getOpcode())){
+                                    this->instructions[candidate].setState("Reservation_ready");
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
 
             for(size_t i = 0; i < this->num_instructions; ++i){
 
@@ -544,15 +851,18 @@ public:
                                 break;
                             }else{
                                 this->instructions[i].setState("Reservation");
-                                size_t src1 = this->instructions[i].getR2();
-                                size_t src2 = this->instructions[i].getR3();
-                                size_t dest = this->instructions[i].getR1();
-                                size_t dest_tag = alu1.addInstruction(i, this->register_file.getRegister(src1), this->register_file.getRegister(src2));
-                                this->register_file.setTag(dest, 20 + dest_tag);
-                                this->register_file.setValidBit(dest, false);
+                                if(this->instructions[i].getOpcode() == "LOAD"){
+                                    size_t src1 = this->instructions[i].getR2();
+                                    size_t dest = this->instructions[i].getR1();
+                                    size_t dest_tag = memory.addInstruction(i, this->register_file.getRegister(src1),NULL,"LOAD");
+                                    this->register_file.setTag(dest, 20 + dest_tag);
+                                    this->register_file.setValidBit(dest, false);
+                                }else{
+                                    size_t src1 = this->instructions[i].getR1();
+                                    size_t src2 = this->instructions[i].getR2();
+                                    size_t dest_tag = memory.addInstruction(i, this->register_file.getRegister(src1), this->register_file.getRegister(src2));
+                                }
                                 
-
-
                                 if(i < this->num_instructions - 1){
                                     this->instructions[i+1].setStart(this->cycle);
                                     this->instructions[i+1].setState("Issue");
