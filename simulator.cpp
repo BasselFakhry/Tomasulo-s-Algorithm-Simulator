@@ -21,10 +21,11 @@ private:
     size_t stalls;
     size_t structural_stalls;
     size_t data_stalls;
+    size_t res_stalls;
 
 public:
 
-    Instruction(std::string instruction, size_t instruction_count): current_state("Out"), instruction_count(instruction_count),duration(0), stalls(0), structural_stalls(0), start(-1){
+    Instruction(std::string instruction, size_t instruction_count): current_state("Out"), instruction_count(instruction_count),duration(0), stalls(0), structural_stalls(0), res_stalls(0), start(-1){
         std::istringstream iss(instruction);
             std::string word;
 
@@ -85,9 +86,13 @@ public:
         ++ this->stalls;
         if(hazard == "structural"){
             ++ this->structural_stalls;
+        }else if (hazard == "structural_res"){
+            ++ this->structural_stalls;
+            ++ this-> res_stalls;
         }else{
             ++ this->data_stalls;
         }
+        
     }
     void incrementDuration(){
         ++ this->duration;
@@ -125,6 +130,16 @@ public:
     float getStallRate(){
         return this->stalls / this->duration;
     }
+    float getStructuralStallRate(){
+        return this->structural_stalls / this->duration;
+    }
+    float getDataStallRate(){
+        return this->data_stalls / this->duration;
+    }
+    float getResStallRate(){
+        return this->res_stalls / this->duration;
+    }
+
     void print(){
         std::cout << "Instruction "<< this->instruction_count << ": " << std::endl;
         std::cout << "Opcode: " << opcode << std::endl;        
@@ -148,6 +163,10 @@ public:
         std::cout << "End: " << end << std::endl;
         std::cout << "Duration: " << duration << std::endl;
         std::cout << "Stalls: " << stalls << std::endl;
+        std::cout << "Structural stalls: " << structural_stalls << std::endl;
+        std::cout << "Data stalls: " << data_stalls << std::endl;
+        std::cout << "Structural stall rate: " << getStructuralStallRate() << std::endl;
+        std::cout << "Data stall rate: " << getDataStallRate() << std::endl;
         std::cout << "Stall rate: " << getStallRate() << std::endl;
         std::cout << "------------------------" << std::endl;
     }
@@ -232,12 +251,14 @@ class Reservation_station{
         std::vector<Register> src2;
         std::unordered_map<size_t, size_t> Insctuction_res_map;
         std::unordered_map<size_t, size_t> res_instruction_map;
-
+        size_t avg_occupancy;
     public:
         Reservation_station(size_t capacity): capacity(capacity), occupancy(0), busy(capacity,false), src1(capacity,Register(false)), src2(capacity,Register(false)){
                 
         }
-
+        void occupancy_avg(){
+            this->avg_occupancy += this->occupancy / this->capacity;
+        }
         size_t addInstruction(size_t instruction_count, Register src1, Register src2 = NULL, std::string opcode = "Arithmetic"){
             assert(!isFull());
             if(opcode == "ALL"){                
@@ -307,6 +328,9 @@ class Reservation_station{
         size_t getReservationEntry(size_t instruction_count){
             return this->Insctuction_res_map[instruction_count];
         }
+        size_t getAvgOccupancy(){
+            return this->avg_occupancy;
+        }
         void clear(size_t reservation_entry){
             -- this->occupancy;
             this->busy[reservation_entry] = false;
@@ -334,13 +358,14 @@ public:
     Alu(Reservation_station* reservation_station = nullptr, Reservation_station* reservation_station_mul = nullptr, Reservation_station* reservation_station_mem = nullptr, size_t latency = 0, size_t capacity = 0): reservation_station(reservation_station), reservation_station_mul(reservation_station_mul), reservation_station_mem(reservation_station_mem), latency(latency), capacity(capacity), pipeline(latency,-1){
 
     }
+    // Function to get the next cycle
     int next_cycle(int ready = -1){
         int out = this->pipeline[this->latency - 1];
         for(size_t i = this-> latency - 1; i >= 1; --i){
             this->pipeline[i] = this->pipeline[i - 1];
         }
         this->pipeline[0] = ready;
-               
+        // returns the last element of the pipeline
         return out;
     }
     bool isFull(){
@@ -414,8 +439,7 @@ public:
         for(size_t i = this-> latency - 1; i >= 1; --i){
             this->pipeline[i] = this->pipeline[i - 1];
         }
-        this->pipeline[0] = ready;
-               
+        this->pipeline[0] = ready;               
         return out;
     }
 
@@ -443,6 +467,7 @@ private:
     size_t remaining_instructions;
     std::queue<size_t> common_data_bus;
     size_t issue;
+    size_t avg_occupancy;
     
 
 public:
@@ -489,6 +514,8 @@ public:
             std::string state_1 = "NOP";
             std::string state_2 = "NOP";
             
+            // Check if there is ready instruction in the reservation station
+
             if(alu_shared_rs.isbusy(0)){
                 state_1 = this->instructions[alu_shared_rs.getInstruction(0)].getState();
             }
@@ -509,6 +536,9 @@ public:
             }
             int alu1_out = this->alu1.next_cycle(ready_1);
             int alu2_out = this->alu2.next_cycle(ready_2);
+
+
+            // After having new operands checking if any reservation station entry can be ready
 
             int ready_mul = -1;
             for(size_t i = 0; i < this->mul_capacity; ++i){
@@ -824,12 +854,14 @@ public:
 
 
             for(size_t i = 0; i < this->num_instructions; ++i){
-
+                // Iterating over the instructions
                 if(this->instructions[i].isDone()){
+                    // if done proceed
                     std::cout<<"Done";                    
                     continue;
                 }else if(this->instructions[i].hasStarted()){
-                    
+                    // if started increment the duration
+
                     this->instructions[i].incrementDuration();
                 
                     // check if the instruction in issue stage can proceed to the next stage
@@ -908,7 +940,7 @@ public:
                             }
                         }
                     }else{
-                        
+                        // if not in issue stage check if the instruction is in reservation stage
                         if(this->instructions[i].getState() == "Reservation_Ex"){
                             this->instructions[i].stall("data");
                         }else if(this->instructions[i].getState() == "Execute"){
@@ -944,7 +976,7 @@ public:
                             }
                             
                         }else if (this->instructions[i].getState() == "Reservation_ready"){
-                            this->instructions[i].stall("structural");
+                            this->instructions[i].stall("structural_res");
                         }
 
                     }
@@ -972,9 +1004,14 @@ public:
                     }
                 }
             }
-
+            alu_shared_rs.occupancy_avg();
+            mul_shared_rs.occupancy_avg();
+            load_store_shared_rs.occupancy_avg();
 
         }
+        this-> avg_occupancy = alu_shared_rs.getAvgOccupancy() + mul_shared_rs.getAvgOccupancy() + load_store_shared_rs.getAvgOccupancy();
+        this-> avg_occupancy /= 3;
+        this-> avg_occupancy /= this->cycle;
                 
     }
 
@@ -983,16 +1020,31 @@ public:
         std::cout << "Num of instructions " << this->num_instructions << std::endl;        
         
         for(size_t i = 0; i < this->num_instructions; ++i){
-            this->instructions[i].print();
+            this->instructions[i].print();            
         }
+        
         
     }
 
     void print_report(){
+        float avg_stall_rate = 0;
+        float avg_structural_stall_rate = 0;
+        float avg_data_stall_rate = 0;
+        for(size_t i = 0; i < this->num_instructions; ++i){
+            
+            avg_stall_rate += this->instructions[i].getStallRate();
+            avg_structural_stall_rate += this->instructions[i].getStructuralStallRate();
+            avg_data_stall_rate += this->instructions[i].getDataStallRate();
+        }
+        avg_stall_rate /= this->num_instructions;
+        avg_structural_stall_rate /= this->num_instructions;
+        avg_data_stall_rate /= this->num_instructions;
         std::cout << "Report: "<< std::endl;
         std::cout << "Num of instructions " << this->num_instructions << std::endl;
-        std::cout << "Total execution time = " << this-> cycle <<" clock cycles." << std::endl;
-        std::cout << "Average number of instructions per cycle = " << this->cycle / this->num_instructions << " (IPC)." << std::endl;
+        std::cout << "Total execution time = " << this-> cycle <<" clock cycles." << std::endl;  
+        std::cout << "Average number of instructions per cycle = " << this->num_instructions / this->cycle  << " (IPC)." << std::endl;
+        std::cout << "Average reservation station occupancy = " << this->avg_occupancy *100 << "%" <<std::endl;
+        
     }
 };
 
@@ -1001,15 +1053,6 @@ public:
 
 int main(int argc, char *argv[]){
 
-    if (argc < 2) {
-        std::cerr << "Usage: " << argv[0] << " <file_path>" << std::endl;
-        return 1;  
-    }
-    std::string file_path = argv[1];
-    //std::cout << "File path: " << file_path << std::endl;
-    Tomasulo_simulator simulator(file_path);
-    simulator.print();
-    
 
     return 0;
 }
